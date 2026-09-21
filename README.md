@@ -15,6 +15,9 @@ manuelle Ablauf wird dabei weitgehend durch Python-Skripte ersetzt.
 3. Die Ergebnisse liegen im Ordner `generated_VM-Daten_*.VMZ`:
    aktualisierte Rangliste, Setzliste und VMZ mit den neuen Gruppenzuteilungen.
 
+Falls PowerShell-Dateien nicht automatisch mit PowerShell verknüpft sind,
+stattdessen `START.cmd` doppelt anklicken.
+
 ## Was die Anwendung erledigt
 
 Der komplette Lauf besteht aus diesen Schritten:
