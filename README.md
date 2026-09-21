@@ -11,7 +11,7 @@ manuelle Ablauf wird dabei weitgehend durch Python-Skripte ersetzt.
 ## HOWTO – Kurzanleitung
 
 1. Die neue Datei `VM-Daten_*.VMZ` in den Projektordner kopieren.
-2. Das Startskript `starte_lauf.ps1` ausführen.
+2. Das Startskript `START.ps1` ausführen.
 3. Die Ergebnisse liegen im Ordner `generated_VM-Daten_*.VMZ`:
    aktualisierte Rangliste, Setzliste und VMZ mit den neuen Gruppenzuteilungen.
 
@@ -65,7 +65,7 @@ Dateinamen. Erwartet wird das Format `VM-Daten_TTMMJJJJ.VMZ`, zum Beispiel
 PowerShell im Projektordner öffnen und ausführen:
 
 ```powershell
-.\starte_lauf.ps1
+.\START.ps1
 ```
 
 Alternativ kann der zentrale Runner direkt gestartet werden:
