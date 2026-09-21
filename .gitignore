@@ -1,0 +1,21 @@
+# Nur diese Projektteile bleiben versioniert:
+# - python/
+# - scripts/
+# - Rangliste.ods
+# - Setzliste.ods
+# - START.ps1
+# - README.md
+/*
+!/.gitignore
+!/README.md
+!/Rangliste.ods
+!/Setzliste.ods
+!/START.ps1
+!/python/
+!/python/**
+!/scripts/
+!/scripts/**
+
+__pycache__/
+*.pyc
+.~lock.*#
