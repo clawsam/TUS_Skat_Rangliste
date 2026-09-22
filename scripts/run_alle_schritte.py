@@ -64,7 +64,8 @@ def main():
             day_date = day.strftime('%d.%m.%Y')
             setzliste = temp / f'Setzliste_{date_stamp}_iteriert.ods'
             run(P03 / 'ergaenze_setzliste.py', current_rangliste, previous, spieltag_export,
-                '--datum', day_date, '--ohne-sortierung', '-o', setzliste)
+                '--datum', day_date, '--ohne-sortierung', '--auswertung', report,
+                '-o', setzliste)
             previous = setzliste
         final_setzliste = generated / f'Setzliste_{dates[-1].strftime("%Y_%m_%d")}.ods'
         run(P03 / 'ergaenze_setzliste.py', '--finalisieren', previous,

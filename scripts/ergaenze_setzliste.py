@@ -10,6 +10,8 @@ import re
 import zipfile
 from xml.etree import ElementTree as ET
 
+from aktualisiere_rangliste import parse_report
+
 N = {
     'office': 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
     'table': 'urn:oasis:names:tc:opendocument:xmlns:table:1.0',
@@ -691,8 +693,10 @@ def insert_at(row, index, values):
     raise ValueError(f'ODS-Einfügeposition {index} nicht gefunden')
 
 
-def update(source_rank, source_setz, source_games, output, target_date=None, finalize=True):
+def update(source_rank, source_setz, source_games, output, target_date=None,
+           finalize=True, report=None):
     ranking = rank_values(source_rank)
+    report_values = parse_report(report) if report else {}
     date, games, last_series = latest_game(source_games, target_date)
     qualified_dates, _ = qualified_game_dates(source_games)
     latest_names = {
@@ -761,6 +765,10 @@ def update(source_rank, source_setz, source_games, output, target_date=None, fin
             player_id = cell_text(logical[id_index]).strip()
             rank_value = (ranking['by_id'].get(player_id)
                           or ranking['by_name'].get(key(name)))
+            if group_name(cell_text(logical[group_index])) == 'Blau':
+                report_value = report_values.get(player_id)
+                if report_value:
+                    rank_value = f'{report_value["average"]:.2f}'.replace('.', ',')
             if rank_value is not None:
                 row = replace_at(row, value_index,
                                  update_cell(logical[value_index], rank_value,
@@ -821,7 +829,9 @@ def update(source_rank, source_setz, source_games, output, target_date=None, fin
             row = replace_at(row, group_index, update_cell(cells(row)[group_index], 'Blau'))
             row = replace_at(row, name_index, update_cell(cells(row)[name_index], name))
             row = replace_at(row, status_index, update_cell(cells(row)[status_index], '0'))
-            value = ranking['by_id'].get(player_id, game_value or '0')
+            report_value = report_values.get(player_id)
+            value = (f'{report_value["average"]:.2f}'.replace('.', ',')
+                     if report_value else ranking['by_id'].get(player_id, game_value or '0'))
             row = replace_at(row, value_index,
                              update_cell(cells(row)[value_index], value,
                                          numeric=True, suffix=' €'))
@@ -966,6 +976,8 @@ def main():
                         help='Nur Sortierung, Abwesenheiten und Farben anwenden')
     parser.add_argument('--spieltage', type=Path,
                         help='Spieltage-ODS zur Ermittlung der qualifizierten Spieltage')
+    parser.add_argument('--auswertung', type=Path,
+                        help='Jahresauswertung für den Schnitt blauer Spieler')
     parser.add_argument('-o', '--output', type=Path, required=True)
     args = parser.parse_args()
     if args.finalisieren:
@@ -975,7 +987,8 @@ def main():
     if not args.rangliste or not args.setzliste or not args.spieltage:
         parser.error('Rangliste, Setzliste und Spieltage sind erforderlich')
     date, updated, unmatched = update(args.rangliste, args.setzliste, args.spieltage,
-                                      args.output, args.datum, not args.ohne_sortierung)
+                                      args.output, args.datum, not args.ohne_sortierung,
+                                      args.auswertung)
     print(f'{args.output}: {date}, {updated} Tischgeldwerte ergänzt')
     if unmatched:
         print(f'Nicht in Setzliste gefunden: {len(unmatched)} Spieler')
