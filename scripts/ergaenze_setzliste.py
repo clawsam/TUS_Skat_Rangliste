@@ -7,9 +7,11 @@ from decimal import Decimal
 from html import escape
 from pathlib import Path
 import re
+import sys
 import zipfile
 from xml.etree import ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aktualisiere_rangliste import parse_report
 
 N = {
