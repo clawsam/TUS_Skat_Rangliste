@@ -591,7 +591,7 @@ def assign_groups(rows, header, styles=None):
         except (IndexError, ValueError, ArithmeticError):
             continue
         parsed[row_index] = (player_id, status, value)
-        if player_id < 100 and status < 4:
+        if player_id <= 100 and status < 4:
             active.append((value, row_index))
     active.sort(key=lambda item: (-item[0], item[1]))
     base, remainder = divmod(len(active), 3)
@@ -600,7 +600,7 @@ def assign_groups(rows, header, styles=None):
     assigned = {row_index: labels[index] for index, (_, row_index) in enumerate(active)}
     for row_index, (player_id, status, _) in parsed.items():
         previous = group_name(cell_text(cells(rows[row_index])[group_index]))
-        assigned[row_index] = ('Blau' if player_id > 99 else
+        assigned[row_index] = ('Blau' if player_id > 100 else
                                 'Grau' if status >= 4 else assigned.get(row_index, 'Rot'))
     for row_index, row in enumerate(rows[1:], 1):
         logical = cells(row)
@@ -657,6 +657,19 @@ def replace_at(row, index, replacement):
         repeat = re.search(r'table:number-columns-repeated="(\d+)"', cell)
         count = int(repeat.group(1)) if repeat else 1
         if logical <= index < logical + count:
+            if count > 1:
+                def repeated(amount):
+                    if amount <= 0:
+                        return ''
+                    if amount == 1:
+                        return re.sub(r'\s+table:number-columns-repeated="\d+"', '', cell, count=1)
+                    return re.sub(r'table:number-columns-repeated="\d+"',
+                                  f'table:number-columns-repeated="{amount}"', cell, count=1)
+                before = index - logical
+                replacement = re.sub(r'\s+table:number-columns-repeated="\d+"', '',
+                                     replacement, count=1)
+                replacement = (repeated(before) + replacement
+                               + repeated(count - before - 1))
             return row[:match.start()] + replacement + row[match.end():]
         logical += count
     raise ValueError(f'ODS-Zelle {index} nicht gefunden')

@@ -40,12 +40,16 @@ def create_report(source, output, year):
         raise ValueError(f'Keine Ergebnisse für {year} in {source}')
 
     totals = defaultdict(lambda: [0, 0])
+    for nr in players:
+        if nr.isdigit() and 1 <= int(nr) <= 100:
+            totals[nr]
     for result in selected:
         totals[result['NR']][0] += 1
         totals[result['NR']][1] += int(result['WERT'])
 
     ranking = sorted(
-        ((nr, count, points, Decimal(points) / Decimal(count), players.get(nr, {}).get('NAME1', nr))
+        ((nr, count, points, Decimal(points) / Decimal(count) if count else Decimal('0'),
+          players.get(nr, {}).get('NAME1', nr))
          for nr, (count, points) in totals.items()),
         key=lambda item: (-item[3], -item[2], item[4]),
     )

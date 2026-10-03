@@ -31,7 +31,7 @@ def player_numbers(source):
     with zipfile.ZipFile(source) as archive:
         fields, records = dbf(archive.read('Spieler.dbf'))
     names = ['_record', '_deleted'] + [field[0] for field in fields]
-    result = {}
+    result, roster = {}, {}
     for record in records:
         row = dict(zip(names, record))
         if row['_deleted'] == '1':
@@ -40,11 +40,13 @@ def player_numbers(source):
         if name in result and result[name] != row['NR']:
             raise ValueError(f'Doppelter Spielername: {row["NAME1"]}')
         result[name] = row['NR']
-    return result
+        if row['NR'].isdigit() and 1 <= int(row['NR']) <= 100:
+            roster[row['NR']] = row['NAME1']
+    return result, roster
 
 
 def update(source_vmz, source_setzliste, output):
-    numbers = player_numbers(source_vmz)
+    numbers, roster = player_numbers(source_vmz)
     with zipfile.ZipFile(source_setzliste) as archive:
         content = archive.read('content.xml').decode()
         import re
@@ -52,8 +54,9 @@ def update(source_vmz, source_setzliste, output):
         if not match:
             raise ValueError('Tabelle1 fehlt in der Setzliste')
         body = match.group(2)
-        original_rows = re.findall(r'<table:table-row\b.*?</table:table-row>', body, re.DOTALL)
-        original_rows = data_rows(original_rows)
+        all_rows = re.findall(r'<table:table-row\b.*?</table:table-row>', body, re.DOTALL)
+        original_rows = data_rows(all_rows)
+        template_row = all_rows[1]
         header = [cell_text(cell) for cell in cells(original_rows[0])]
         reuse_absence_column(original_rows, header)
         source_name_index = header.index('Name')
@@ -111,6 +114,32 @@ def update(source_vmz, source_setzliste, output):
                                           f'of:=SUM([.{daily_column}{sheet_row}:.EE{sheet_row}])',
                                           cell_text(logical[points_index]) or '0'))
             new_rows.append(trim_row(row))
+        present = {cell_text(cells(row)[id_index]).strip() for row in new_rows[1:]}
+        for number, db_name in sorted(roster.items(), key=lambda item: int(item[0])):
+            if number in present:
+                continue
+            row = template_row
+            if add_group:
+                row = insert_at(row, group_index, [''])
+            if add_status:
+                row = insert_at(row, status_index, ['0'])
+            surname, separator, first_name = db_name.partition(',')
+            display_name = f'{first_name.strip()} {surname.strip()}' if separator else db_name
+            row = replace_at(row, id_index, update_cell(cells(row)[id_index], number))
+            row = replace_at(row, name_index, update_cell(cells(row)[name_index], display_name))
+            logical = cells(row)
+            sheet_row = len(new_rows) + 1
+            status = absence_value(logical, groups)
+            row = replace_at(row, status_index,
+                             formula_cell(logical[status_index],
+                                          absence_formula(groups, sheet_row), status))
+            logical = cells(row)
+            row = replace_at(row, points_index,
+                             formula_cell(logical[points_index],
+                                          f'of:=SUM([.{daily_column}{sheet_row}:.EE{sheet_row}])',
+                                          '0'))
+            new_rows.append(trim_row(row))
+            changed += 1
         row_start = body.find('<table:table-row')
         new_body = body[:row_start] + ''.join(new_rows)
         new_body = fix_tischpunkte_formulas(new_body)

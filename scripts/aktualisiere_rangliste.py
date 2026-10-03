@@ -17,7 +17,7 @@ RED_TO_BLACK = {red: black for black, red in BLACK_TO_RED.items()}
 
 
 def key(name):
-    return ' '.join(name.casefold().split())
+    return ' '.join(sorted(re.sub(r'[^\wäöüÄÖÜß]+', ' ', name).casefold().split()))
 
 
 def parse_report(path):
@@ -189,10 +189,11 @@ def update_ods(source, output, report):
         style_pairs = style_color_pairs(content)
         existing = set()
         updated = set()
-        report_by_id = {item['id']: item for item in values.values() if item['id']}
+        report_by_id = {item['id']: item for item in values.values()
+                        if item['id'] and item['id'].isdigit()
+                        and 1 <= int(item['id']) <= 100}
         if not report_by_id:
             raise ValueError('Die Auswertung enthält keine Spieler-IDs')
-        data_rows = []
         row_matches = list(ROW_RE.finditer(content))
         header_match = next((match for match in row_matches
                              if 'Name' in [unescape(TEXT_RE.search(cell).group(1))
@@ -206,6 +207,40 @@ def update_ods(source, output, report):
         if 'ID' not in header_values:
             raise ValueError('Die Rangliste benötigt eine vorhandene ID-Spalte')
         id_index = header_values.index('ID')
+        rank_slots = []
+        for match in row_matches[row_matches.index(header_match) + 1:]:
+            row_cells = logical_cells(match.group(0))
+            place = (unescape(TEXT_RE.search(row_cells[1]).group(1)).strip()
+                     if len(row_cells) > 1 and TEXT_RE.search(row_cells[1]) else '')
+            if place.isdigit():
+                rank_slots.append(match)
+        if len(rank_slots) < len(report_by_id):
+            if not rank_slots:
+                raise ValueError('Keine Ranglisten-Vorlagenzeile gefunden')
+            insert_at = rank_slots[-1].end()
+            content = (content[:insert_at]
+                       + rank_slots[-1].group(0) * (len(report_by_id) - len(rank_slots))
+                       + content[insert_at:])
+            row_matches = list(ROW_RE.finditer(content))
+            header_match = next(match for match in row_matches if 'Name' in [
+                unescape(TEXT_RE.search(cell).group(1)) if TEXT_RE.search(cell) else ''
+                for cell in logical_cells(match.group(0))])
+
+        report_by_name = {key(item['name']): item for item in report_by_id.values()}
+        claimed = set()
+        for match in row_matches[row_matches.index(header_match) + 1:]:
+            row_cells = logical_cells(match.group(0))
+            if len(row_cells) <= max(id_index, 2):
+                continue
+            row_id = (unescape(TEXT_RE.search(row_cells[id_index]).group(1)).strip()
+                      if TEXT_RE.search(row_cells[id_index]) else '')
+            name = (unescape(TEXT_RE.search(row_cells[2]).group(1)).strip()
+                    if TEXT_RE.search(row_cells[2]) else '')
+            item = report_by_id.get(row_id) or report_by_name.get(key(name))
+            if item:
+                claimed.add(item['id'])
+        remaining = iter(item for item in report_by_id.values() if item['id'] not in claimed)
+        data_rows = []
         for match in row_matches:
             row = match.group(0)
             row_cells = logical_cells(row)
@@ -217,26 +252,31 @@ def update_ods(source, output, report):
                       if len(row_cells) > id_index and TEXT_RE.search(row_cells[id_index]) else '')
             if row_id:
                 existing.add(row_id)
-            item = report_by_id.get(row_id)
+            name_match = TEXT_RE.search(row_cells[2])
+            name = unescape(name_match.group(1)).strip() if name_match else ''
+            place_match = TEXT_RE.search(row_cells[1])
+            place = unescape(place_match.group(1)).strip() if place_match else ''
+            if not place.isdigit():
+                continue
+            item = report_by_id.get(row_id) or report_by_name.get(key(name))
+            if item is None:
+                item = next(remaining, None)
             if item is not None:
-                calculated = Decimal(item['points']) / Decimal(item['series'])
+                calculated = (Decimal(item['points']) / Decimal(item['series'])
+                              if item['series'] else Decimal('0'))
                 display = calculated.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
                 row = replace_cells(row, {
                     2: lambda cell: set_text(cell, item['name']),
                     3: lambda cell: set_number(cell, item['series'], str(item['series'])),
                     4: lambda cell: set_number(cell, item['points'], str(item['points'])),
                     5: lambda cell: set_number(cell, calculated, f'{display:.2f}'.replace('.', ',')),
+                    id_index: lambda cell: set_number(cell, item['id'], item['id']),
                 })
-                updated.add(row_id)
+                updated.add(item['id'])
                 row_cells = logical_cells(row)
                 name = item['name']
             else:
-                name_match = TEXT_RE.search(row_cells[2])
-                if not name_match:
-                    continue
-                name = unescape(name_match.group(1)).strip()
-                if not name or name.casefold() == 'name':
-                    continue
+                continue
             series = int(number(row_cells[3]))
             points = int(number(row_cells[4]))
             average = Decimal(points) / Decimal(series) if series else Decimal('0')
@@ -279,8 +319,8 @@ def update_ods(source, output, report):
                 data = content.encode('utf-8') if entry.filename == 'content.xml' else archive.read(entry)
                 result.writestr(entry, data)
 
-    skipped = sorted(f'{item["id"]}: {item["name"]}' for item in values.values()
-                     if item['id'] and item['id'] not in updated)
+    skipped = sorted(f'{item["id"]}: {item["name"]}' for item in report_by_id.values()
+                     if item['id'] not in updated)
     return len(updated), len(existing), skipped
 
 
