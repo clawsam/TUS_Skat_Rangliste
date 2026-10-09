@@ -5,15 +5,15 @@ from decimal import Decimal, ROUND_HALF_UP
 from html import escape, unescape
 from pathlib import Path
 import re
+import sys
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from formatiere_listen import format_layout
 
 ROW_RE = re.compile(r'<table:table-row\b.*?</table:table-row>', re.DOTALL)
 CELL_RE = re.compile(r'<table:table-cell\b[^>]*/>|<table:table-cell\b[^>]*>.*?</table:table-cell>', re.DOTALL)
 TEXT_RE = re.compile(r'<text:p\b[^>]*>(.*?)</text:p>', re.DOTALL)
-STYLE_RE = re.compile(r'table:style-name="([^"]+)"')
-BLACK_TO_RED = {'ce3': 'ce8', 'ce9': 'ce15', 'ce16': 'ce21',
-                'ce22': 'ce27', 'ce29': 'ce34', 'ce36': 'ce41'}
-RED_TO_BLACK = {red: black for black, red in BLACK_TO_RED.items()}
 
 
 def key(name):
@@ -150,48 +150,15 @@ def text_cell(value):
     return f'<table:table-cell office:value-type="string"><text:p>{value}</text:p></table:table-cell>'
 
 
-def style_color_pairs(content):
-    black_to_red = {}
-    red_to_black = {}
-    groups = {}
-    for block in re.findall(r'<style:style\b[^>]*>.*?</style:style>', content, re.DOTALL):
-        name_match = re.search(r'style:name="([^"]+)"', block)
-        if not name_match or '#000000' not in block and '#ff3333' not in block:
-            continue
-        name = name_match.group(1)
-        normalized = re.sub(r'style:name="[^"]+"', '', block)
-        normalized = normalized.replace('#000000', '#COLOR').replace('#ff3333', '#COLOR')
-        groups.setdefault(normalized, []).append((name, '#ff3333' in block))
-    for group in groups.values():
-        black = [name for name, red in group if not red]
-        red = [name for name, is_red in group if is_red]
-        for name in black:
-            if red:
-                black_to_red[name] = red[0]
-        for name in red:
-            if black:
-                red_to_black[name] = black[0]
-    return black_to_red, red_to_black
-
-
-def set_border_color(row, red, style_pairs):
-    def replace(match):
-        name = match.group(1)
-        styles = style_pairs[0] if red else style_pairs[1]
-        return f'table:style-name="{styles.get(name, name)}"'
-    return STYLE_RE.sub(replace, row)
-
-
 def update_ods(source, output, report):
     values = parse_report(report)
     with zipfile.ZipFile(source) as archive:
         content = archive.read('content.xml').decode('utf-8')
-        style_pairs = style_color_pairs(content)
         existing = set()
         updated = set()
         report_by_id = {item['id']: item for item in values.values()
                         if item['id'] and item['id'].isdigit()
-                        and 1 <= int(item['id']) <= 100}
+                        and 1 <= int(item['id']) <= 99}
         if not report_by_id:
             raise ValueError('Die Auswertung enthält keine Spieler-IDs')
         row_matches = list(ROW_RE.finditer(content))
@@ -241,6 +208,7 @@ def update_ods(source, output, report):
                 claimed.add(item['id'])
         remaining = iter(item for item in report_by_id.values() if item['id'] not in claimed)
         data_rows = []
+        slots = []
         for match in row_matches:
             row = match.group(0)
             row_cells = logical_cells(row)
@@ -258,6 +226,7 @@ def update_ods(source, output, report):
             place = unescape(place_match.group(1)).strip() if place_match else ''
             if not place.isdigit():
                 continue
+            slots.append((match.start(), match.end()))
             item = report_by_id.get(row_id) or report_by_name.get(key(name))
             if item is None:
                 item = next(remaining, None)
@@ -289,11 +258,9 @@ def update_ods(source, output, report):
             data_rows.append({'match': match, 'row': row, 'name': name,
                               'series': series, 'points': points, 'total': total})
 
-        slots = sorted((item['match'].start(), item['match'].end()) for item in data_rows)
         data_rows.sort(key=lambda item: (item['series'] < 40, -item['total'],
                                          -item['points'], key(item['name'])))
-        top_count = sum(item['series'] >= 40 for item in data_rows)
-        replacements = []
+        replacements = [(start, end, '') for start, end in slots[len(data_rows):]]
         for rank, item in enumerate(data_rows, 1):
             row = item['row']
             row_cells = logical_cells(row)
@@ -308,11 +275,11 @@ def update_ods(source, output, report):
             })
             row = re.sub(r'\.([A-Z]+)\d+',
                          lambda match: f'.{match.group(1)}{rank + 1}', row)
-            row = set_border_color(row, rank > top_count, style_pairs)
             replacements.append((*slots[rank - 1], row))
         for start, end, row in sorted(replacements, reverse=True):
             content = content[:start] + row + content[end:]
 
+        content = format_layout(content, ranking=True)
         output.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output, 'w') as result:
             for entry in archive.infolist():

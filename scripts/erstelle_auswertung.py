@@ -41,7 +41,7 @@ def create_report(source, output, year):
 
     totals = defaultdict(lambda: [0, 0])
     for nr in players:
-        if nr.isdigit() and 1 <= int(nr) <= 100:
+        if nr.isdigit() and 1 <= int(nr) <= 99:
             totals[nr]
     for result in selected:
         totals[result['NR']][0] += 1

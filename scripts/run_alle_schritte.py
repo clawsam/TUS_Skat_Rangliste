@@ -43,7 +43,7 @@ def main():
     spieltag_export = temp / f'Spieltage{stamp}.ods'
     report = temp / f'Auswertung_{args.jahr}_{stamp}.txt'
     current_rangliste = generated / f'Rangliste_{args.jahr}_{stamp}.ods'
-    vmz_prepared = generated / 'VM-Daten_vorbereitet.VMZ'
+    vmz_prepared = generated / f'{args.vmz.stem}_vorbereitet{args.vmz.suffix}'
 
     run(P01 / 'erstelle_auswertung.py', args.vmz, '--year', args.jahr,
         '-o', report)
@@ -67,12 +67,13 @@ def main():
                 '--datum', day_date, '--ohne-sortierung', '--auswertung', report,
                 '-o', setzliste)
             previous = setzliste
-        final_setzliste = generated / f'Setzliste_{dates[-1].strftime("%Y_%m_%d")}.ods'
+        final_setzliste = generated / f'Setzliste_{args.jahr}_{stamp}.ods'
         run(P03 / 'ergaenze_setzliste.py', '--finalisieren', previous,
             '--spieltage', spieltag_export, '-o', final_setzliste)
         setzliste = final_setzliste
     run(P03 / 'aktualisiere_vmz_gruppen.py', args.vmz, setzliste,
         '-o', vmz_prepared)
+    run(SCRIPTS / 'export_listen_pdf.py', current_rangliste, setzliste)
     print(f'Lauf abgeschlossen: {run_dir}')
 
 

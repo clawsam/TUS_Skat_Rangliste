@@ -3,7 +3,7 @@
 import argparse
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from html import escape
 from pathlib import Path
 import re
@@ -13,6 +13,7 @@ from xml.etree import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aktualisiere_rangliste import parse_report
+from formatiere_listen import format_layout
 
 N = {
     'office': 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
@@ -21,12 +22,6 @@ N = {
 }
 MAX_COLUMNS = 135  # EE: letzter Bereich, den die Tischpunkte-Formeln auswerten
 GROUPS = {'0': 'Grün', '1': 'Gelb', '2': 'Rot', '3': 'Grau', '4': 'Blau'}
-GROUP_COLORS = {
-    'Grün': '#99ff66', 'Gelb': '#ffff99', 'Rot': '#ff9999',
-    'Grau': '#dddddd', 'Blau': '#66ccff',
-}
-GROUP_SUFFIX = {'Grün': 'gruen', 'Gelb': 'gelb', 'Rot': 'rot',
-                'Grau': 'grau', 'Blau': 'blau'}
 for prefix, uri in N.items():
     ET.register_namespace(prefix, uri)
 
@@ -433,89 +428,6 @@ def group_name(value):
     return match.group(1) if match else ''
 
 
-def color_styles(content):
-    group_suffixes = tuple(f'_{suffix}' for suffix in GROUP_SUFFIX.values())
-    styles = {
-        match.group(1): match.group(0)
-        for match in re.finditer(
-            r'<style:style\b[^>]*style:name="([^"]+)".*?</style:style>',
-            content, re.DOTALL)
-    }
-    result = {}
-    additions = []
-    for name, style in list(styles.items()):
-        if name.endswith(group_suffixes):
-            continue
-        for group, color in GROUP_COLORS.items():
-            existing = re.search(r'fo:background-color="(#[0-9a-fA-F]+)"', style)
-            if existing and existing.group(1).lower() == color:
-                result[name, group] = name
-                continue
-            clone = f'{name}_{GROUP_SUFFIX[group]}'
-            if clone not in styles:
-                replacement = re.sub(r'(style:name=")[^"]+"', rf'\g<1>{clone}"', style, count=1)
-                if existing:
-                    replacement = replacement.replace(existing.group(0), f'fo:background-color="{color}"', 1)
-                else:
-                    replacement = replacement.replace(
-                        '<style:table-cell-properties',
-                        f'<style:table-cell-properties fo:background-color="{color}"', 1)
-                styles[clone] = replacement
-                additions.append(replacement)
-            result[name, group] = clone
-
-    # Auch bereits formatierte Zellen müssen eine Gruppenvariante bekommen.
-    # Dabei wird ausschließlich die Hintergrundfarbe ersetzt.
-    for block in re.findall(r'<style:style\b[^>]*>.*?</style:style>', content, re.DOTALL):
-        name_match = re.search(r'style:name="([^"]+)"', block)
-        family_match = re.search(r'style:family="([^"]+)"', block)
-        if not name_match or not family_match or family_match.group(1) != 'table-cell':
-            continue
-        base = name_match.group(1)
-        if base.endswith(group_suffixes):
-            continue
-        for group, color in GROUP_COLORS.items():
-            clone = f'{base}_{GROUP_SUFFIX[group]}'
-            if clone in styles:
-                result[base, group] = clone
-                continue
-            replacement = re.sub(r'(style:name=")[^"]+"', rf'\g<1>{clone}"', block, count=1)
-            if 'fo:background-color=' in replacement:
-                replacement = re.sub(r'fo:background-color="#[0-9a-fA-F]+"',
-                                     f'fo:background-color="{color}"', replacement, count=1)
-            else:
-                replacement = replacement.replace(
-                    '<style:table-cell-properties',
-                    f'<style:table-cell-properties fo:background-color="{color}"', 1)
-            styles[clone] = replacement
-            additions.append(replacement)
-            result[base, group] = clone
-    for block in re.findall(r'<style:style\b[^>]*>.*?</style:style>', content, re.DOTALL):
-        name_match = re.search(r'style:name="([^"]+)"', block)
-        family_match = re.search(r'style:family="([^"]+)"', block)
-        if not name_match or not family_match or family_match.group(1) != 'table-row':
-            continue
-        base = name_match.group(1)
-        if base.endswith(group_suffixes):
-            continue
-        for group, suffix in GROUP_SUFFIX.items():
-            clone = f'{base}_{suffix}'
-            replacement = re.sub(r'(style:name=")[^"]+"', rf'\g<1>{clone}"', block, count=1)
-            if 'fo:background-color=' in replacement:
-                replacement = re.sub(r'fo:background-color="#[0-9a-fA-F]+"',
-                                     f'fo:background-color="{GROUP_COLORS[group]}"', replacement, count=1)
-            else:
-                replacement = replacement.replace(
-                    '<style:table-row-properties',
-                    f'<style:table-row-properties fo:background-color="{GROUP_COLORS[group]}"', 1)
-            additions.append(replacement)
-            result['row', base, group] = clone
-    if additions:
-        content = content.replace('</office:automatic-styles>',
-                                  ''.join(additions) + '</office:automatic-styles>', 1)
-    return content, result
-
-
 def currency_styles(content):
     def replace_style(match):
         style = match.group(0)
@@ -535,50 +447,13 @@ def set_style(cell, style_name):
                         f'<table:table-cell table:style-name="{style_name}"', 1)
 
 
-def colorize_row(row, group, styles, templates):
-    row_style = re.search(r'<table:table-row\b[^>]*table:style-name="([^"]+)"', row)
-    if row_style and ('row', row_style.group(1), group) in styles:
-        row = row.replace(f'table:style-name="{row_style.group(1)}"',
-                          f'table:style-name="{styles["row", row_style.group(1), group]}"', 1)
-    matches = list(re.finditer(
-        r'<table:table-cell\b[^>]*/>|<table:table-cell\b[^>]*>.*?</table:table-cell>',
-        row, re.DOTALL))
-    if not matches:
-        return row
-    expanded = []
-    for match in matches:
-        cell = match.group(0)
-        repeat = re.search(r'table:number-columns-repeated="(\d+)"', cell)
-        cell = re.sub(r'\s+table:number-columns-repeated="\d+"', '', cell, count=1)
-        expanded.extend([cell] * (int(repeat.group(1)) if repeat else 1))
-    recolored = []
-    for index, cell in enumerate(expanded):
-        style = re.search(r'table:style-name="([^"]+)"', cell)
-        base = style.group(1) if style else templates.get(index)
-        if base and (base, group) in styles:
-            replacement = f'table:style-name="{styles[base, group]}"'
-            if style:
-                cell = cell.replace(style.group(0), replacement, 1)
-            else:
-                cell = cell.replace('<table:table-cell',
-                                    f'<table:table-cell {replacement}', 1)
-        recolored.append(cell)
-    return row[:matches[0].start()] + ''.join(recolored) + row[matches[-1].end():]
-
-
-def assign_groups(rows, header, styles=None):
+def assign_groups(rows, header):
     group_index = header.index('Gruppe')
     id_index = header.index('ID')
     status_index = absence_index(header)
     if status_index is None:
         raise ValueError('Keine Abwesenheitsspalte in der Setzliste')
     value_index = header.index('Schnitt')
-    templates = {}
-    for row in rows[1:]:
-        for index, cell in enumerate(cells(row)):
-            style = re.search(r'table:style-name="([^"]+)"', cell)
-            if style and index not in templates:
-                templates[index] = style.group(1)
     active = []
     parsed = {}
     for row_index, row in enumerate(rows[1:], 1):
@@ -590,8 +465,10 @@ def assign_groups(rows, header, styles=None):
             value = numeric_cell_value(logical[value_index])
         except (IndexError, ValueError, ArithmeticError):
             continue
+        if player_id < 1:
+            continue
         parsed[row_index] = (player_id, status, value)
-        if player_id <= 100 and status < 4:
+        if player_id <= 99 and status < 4:
             active.append((value, row_index))
     active.sort(key=lambda item: (-item[0], item[1]))
     base, remainder = divmod(len(active), 3)
@@ -600,7 +477,7 @@ def assign_groups(rows, header, styles=None):
     assigned = {row_index: labels[index] for index, (_, row_index) in enumerate(active)}
     for row_index, (player_id, status, _) in parsed.items():
         previous = group_name(cell_text(cells(rows[row_index])[group_index]))
-        assigned[row_index] = ('Blau' if player_id > 100 else
+        assigned[row_index] = ('Blau' if player_id >= 100 else
                                 'Grau' if status >= 4 else assigned.get(row_index, 'Rot'))
     for row_index, row in enumerate(rows[1:], 1):
         logical = cells(row)
@@ -612,8 +489,7 @@ def assign_groups(rows, header, styles=None):
                      and previous in ('Grün', 'Gelb', 'Rot')
                      and current != previous else current)
             row = replace_at(row, group_index, update_cell(logical[group_index], label))
-            rows[row_index] = (colorize_row(row, current, styles, templates)
-                               if styles else row)
+            rows[row_index] = row
     return rows
 
 
@@ -712,6 +588,12 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
            finalize=True, report=None):
     ranking = rank_values(source_rank)
     report_values = parse_report(report) if report else {}
+    for player_id, item in report_values.items():
+        series = item['series']
+        average = Decimal(item['points']) / series if series else Decimal('0')
+        total = average + Decimal(series - 50) / 2
+        ranking['by_id'][player_id] = format(
+            total.quantize(Decimal('.01'), rounding=ROUND_HALF_UP), '.2f').replace('.', ',')
     date, games, last_series = latest_game(source_games, target_date)
     qualified_dates, _ = qualified_game_dates(source_games)
     latest_names = {
@@ -723,8 +605,6 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
     label = f'{day.day}.{day.month}.'
     with zipfile.ZipFile(source_setz) as archive:
         content = archive.read('content.xml').decode()
-        content, styles = color_styles(content)
-        content = currency_styles(content)
         match = re.search(r'(<table:table\b[^>]*table:name="Tabelle1"[^>]*>)(.*?)(</table:table>)', content, re.DOTALL)
         if not match:
             raise ValueError('Tabelle1 fehlt in der Setzliste')
@@ -780,10 +660,6 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
             player_id = cell_text(logical[id_index]).strip()
             rank_value = (ranking['by_id'].get(player_id)
                           or ranking['by_name'].get(key(name)))
-            if group_name(cell_text(logical[group_index])) == 'Blau':
-                report_value = report_values.get(player_id)
-                if report_value:
-                    rank_value = f'{report_value["average"]:.2f}'.replace('.', ',')
             if rank_value is not None:
                 row = replace_at(row, value_index,
                                  update_cell(logical[value_index], rank_value,
@@ -844,9 +720,7 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
             row = replace_at(row, group_index, update_cell(cells(row)[group_index], 'Blau'))
             row = replace_at(row, name_index, update_cell(cells(row)[name_index], name))
             row = replace_at(row, status_index, update_cell(cells(row)[status_index], '0'))
-            report_value = report_values.get(player_id)
-            value = (f'{report_value["average"]:.2f}'.replace('.', ',')
-                     if report_value else ranking['by_id'].get(player_id, game_value or '0'))
+            value = ranking['by_id'].get(player_id, game_value or '0')
             row = replace_at(row, value_index,
                              update_cell(cells(row)[value_index], value,
                                          numeric=True, suffix=' €'))
@@ -875,7 +749,7 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
             existing_ids.add(player_id)
             unmatched.discard(player_id)
         if finalize:
-            new_rows = assign_groups(new_rows, header, styles)
+            new_rows = assign_groups(new_rows, header)
             new_rows = sort_rows(new_rows, header)
         total_row = header_row
         total_cells = cells(total_row)
@@ -903,6 +777,8 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
         new_body = trim_columns(new_body)
         new_body = remove_repeated_rows(new_body)
         content = content[:match.start(2)] + new_body + content[match.end(2):]
+        if finalize:
+            content = format_layout(currency_styles(content))
         output.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output, 'w') as result:
             for entry in archive.infolist():
@@ -913,8 +789,6 @@ def update(source_rank, source_setz, source_games, output, target_date=None,
 def finalize_setzliste(source, output, source_games=None):
     with zipfile.ZipFile(source) as archive:
         content = archive.read('content.xml').decode()
-        content, styles = color_styles(content)
-        content = currency_styles(content)
         match = re.search(r'(<table:table\b[^>]*table:name="Tabelle1"[^>]*>)(.*?)(</table:table>)',
                           content, re.DOTALL)
         if not match:
@@ -958,7 +832,7 @@ def finalize_setzliste(source, output, source_games=None):
                 row = replace_at(row, status_index,
                                  update_cell(cells(row)[status_index], status))
             rows[row_index] = row
-        rows = assign_groups(rows, header, styles)
+        rows = assign_groups(rows, header)
         rows = sort_rows(rows, header)
         if total_row:
             points_index = header.index('Tischpunkte')
@@ -974,6 +848,7 @@ def finalize_setzliste(source, output, source_games=None):
         new_body = body[:row_start] + ''.join(rows)
         new_body = remove_repeated_rows(new_body)
         content = content[:match.start(2)] + new_body + content[match.end(2):]
+        content = format_layout(currency_styles(content))
         output.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output, 'w') as result:
             for entry in archive.infolist():
@@ -992,7 +867,7 @@ def main():
     parser.add_argument('--spieltage', type=Path,
                         help='Spieltage-ODS zur Ermittlung der qualifizierten Spieltage')
     parser.add_argument('--auswertung', type=Path,
-                        help='Jahresauswertung für den Schnitt blauer Spieler')
+                        help='Jahresauswertung für den Gesamtschnitt aller Spieler einschließlich Gäste')
     parser.add_argument('-o', '--output', type=Path, required=True)
     args = parser.parse_args()
     if args.finalisieren:

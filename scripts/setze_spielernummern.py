@@ -40,7 +40,7 @@ def player_numbers(source):
         if name in result and result[name] != row['NR']:
             raise ValueError(f'Doppelter Spielername: {row["NAME1"]}')
         result[name] = row['NR']
-        if row['NR'].isdigit() and 1 <= int(row['NR']) <= 100:
+        if row['NR'].isdigit() and 1 <= int(row['NR']) <= 99:
             roster[row['NR']] = row['NAME1']
     return result, roster
 

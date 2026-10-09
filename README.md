@@ -29,6 +29,11 @@ Der komplette Lauf besteht aus diesen Schritten:
 4. Die Spielernummern werden mit der vorhandenen Setzliste abgeglichen.
 5. Für die Spieltage werden die Tischgeldwerte in die Setzliste eingetragen.
 6. Die Setzliste wird finalisiert und nach den vorgesehenen Gruppen sortiert.
+   Farben und Zellrahmen werden danach anhand der endgültigen Positionen
+   gesetzt. Auch die Rangliste erhält ihr Layout erst nach dem Befüllen und
+   Sortieren: grüne Kopf- und Namensfelder, schwarze Rahmen ab 40 Serien und
+   rote Rahmen darunter. Die Setzliste erhält Gruppenfarben, eine weiße
+   Platzspalte und einen schwarzen Außenrahmen wie in den PDF-Vorlagen.
 7. Die Gruppen Grün, Gelb und Rot werden in eine neue, vorbereitete VMZ
    zurückgeschrieben.
 
@@ -91,13 +96,15 @@ generated_VM-Daten_21092026.VMZ\
 ├── temp\                 alle Zwischenstände und temporären Dateien
 ├── Rangliste_*.ods       fertige Rangliste
 ├── Setzliste_*.ods       fertige Setzliste
-└── VM-Daten_vorbereitet.VMZ
+└── VM-Daten_21092026_vorbereitet.VMZ
 ```
 
 Die fertige Rangliste und Setzliste liegen direkt im jeweiligen
 `generated_VM-Daten_*.VMZ`-Ordner. Die Datei
-`VM-Daten_vorbereitet.VMZ` ist die Datenbankkopie mit den aktualisierten
-Gruppen. Erst diese Datei weitergeben oder im Vereinsmeister verwenden.
+`VM-Daten_21092026_vorbereitet.VMZ` ist die Datenbankkopie mit den aktualisierten
+Gruppen. Der Zeitstempel aus dem Namen der Eingabe-VMZ bleibt erhalten; die
+Datei erhält zusätzlich den Suffix `_vorbereitet`. Erst diese Datei weitergeben
+oder im Vereinsmeister verwenden.
 
 ## Was weiterhin manuell geprüft wird
 
@@ -130,6 +137,10 @@ Die Rangliste enthält unter anderem:
 - Summe der Punkte;
 - Spielschnitt;
 - Bonus und Gesamtschnitt.
+
+Die Spalte `Schnitt` der Setzliste verwendet für Mitglieder und Gastspieler den
+Gesamtschnitt: `Gesamtpunkte / Serien + (Serien - 50) / 2`.
+Bei null Serien wird der Spielschnitt als 0 angesetzt (Gesamtschnitt: −25).
 
 Die Setzliste übernimmt zusätzlich die letzte Serie und die Tischgeldwerte aus
 den Spieltagsdaten. Für Vierer- und Dreiertische gelten die im Projekt
