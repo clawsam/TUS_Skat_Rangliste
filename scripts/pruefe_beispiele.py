@@ -1,8 +1,10 @@
 """Check supplied VMZ, ODS and PDF examples; write analysis reports only.
 
-Run from any directory: py -3 scripts/pruefe_beispiele.py
+Run: py -3 scripts/pruefe_beispiele.py --alias-old "..." --alias-new "..."
+Supply the historical example's name discrepancy locally; do not commit names.
 The PDF text files were extracted once with pypdf; runtime uses only stdlib.
 """
+import argparse
 import csv
 import json
 from collections import Counter, defaultdict
@@ -58,7 +60,7 @@ def table(z, name):
     return [dict(zip(names, row)) for row in rows if row[1] == '0']
 
 
-def main():
+def main(alias_old, alias_new):
     with zipfile.ZipFile(ROOT / 'VM-Daten_03092026.VMZ') as z:
         results = table(z, 'VM.dbf')
         players = {r['NR']: r for r in table(z, 'Spieler.dbf')}
@@ -91,8 +93,8 @@ def main():
     for row in ranking:
         name = row[2][0]
         key = norm(name)
-        if key == norm('Hemmer, Fritz'):
-            key = norm('Hemmer, Ringo')  # Candidate alias, not an automatic rename.
+        if key == norm(alias_old):
+            key = norm(alias_new)  # Candidate alias, not an automatic rename.
         actual = tuple(int(row[i][1] or '0') for i in [3, 4])
         expected = newer.get(key)
         status = ('nicht in PDF' if expected is None else
@@ -181,7 +183,7 @@ def main():
     for nr, r in roster10.items():
         if not r[1][0].isdigit():
             continue
-        name = norm('Hemmer, Fritz') if nr == '60' else norm(players10[nr]['NAME1'])
+        name = norm(alias_old) if nr == '60' else norm(players10[nr]['NAME1'])
         assert abs(Decimal(r[3][1]) - Decimal(complete_rank[name][12][1])) < Decimal('.011')
         total_count += 1
     with zipfile.ZipFile(ROOT / '2.Runde/VM-Daten_17092026.VMZ') as z:
@@ -198,4 +200,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--alias-old', required=True)
+    parser.add_argument('--alias-new', required=True)
+    args = parser.parse_args()
+    main(args.alias_old, args.alias_new)

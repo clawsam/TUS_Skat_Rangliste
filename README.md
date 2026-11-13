@@ -189,6 +189,10 @@ werden:
 | `add_gastspieler.py` | Einen Gast in eine Setzliste aufnehmen |
 | `pruefe_beispiele.py` | Vorhandene Beispielstände prüfen |
 
+Für den historischen Beispielabgleich müssen die beiden abweichenden Namen
+lokal über `--alias-old "..." --alias-new "..."` übergeben werden. Namen gehören
+nicht in den versionierten Quellcode.
+
 ## Sicherheit und Dateien
 
 Eingaben wie VMZ, Rangliste und Setzliste werden nicht überschrieben. Jeder

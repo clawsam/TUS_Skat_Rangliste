@@ -102,9 +102,14 @@ tr { break-inside: avoid; }
         f'<col style="width:{width}mm">' for width in widths) + '</colgroup>' + ''.join(rendered) + '''</table>
 <script>
 const table = document.querySelector('table');
-// Inklusive aller Spieler und der Summenzeile auf eine A4-Seite verkleinern.
-table.style.zoom = Math.min(1, 188 * 96 / 25.4 / table.offsetWidth,
-                              275 * 96 / 25.4 / table.offsetHeight);
+// Zoom rundet Zellrahmen neu; die tatsächliche Größe nach jedem Schritt messen.
+let zoom = 1;
+for (let pass = 0; pass < 3; pass++) {
+    const bounds = table.getBoundingClientRect();
+    zoom *= Math.min(1, 188 * 96 / 25.4 / bounds.width,
+                        275 * 96 / 25.4 / bounds.height);
+    table.style.zoom = zoom;
+}
 </script></body></html>'''
 
 

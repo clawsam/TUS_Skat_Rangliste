@@ -41,11 +41,11 @@ def format_layout(content, ranking=False):
         r'<style:style\b[^>]*style:name="([^"]+)"[^>]*>.*?</style:style>', content, re.DOTALL)}
     additions, cache = [], {}
 
-    def styled(cell, background, edges):
+    def styled(cell, background, edges, total=False):
         match = STYLE.search(cell)
         base = match[1] if match else 'Default'
         base = re.sub(r'^layout_\d+_', '', base)
-        key = base, background, tuple(edges)
+        key = base, background, tuple(edges), total
         if key not in cache:
             name = f'layout_{len(definitions) + len(additions)}_{base}'
             while name in definitions:
@@ -60,6 +60,16 @@ def format_layout(content, ranking=False):
                 block = block.replace('<style:table-cell-properties', f'<style:table-cell-properties {attributes}', 1)
             else:
                 block = block.replace('</style:style>', f'<style:table-cell-properties {attributes}/></style:style>')
+            if total:
+                number_style = 'N106' if ranking else 'N2'
+                block = re.sub(r'\s+style:data-style-name="[^"]*"', '', block)
+                block = block.replace('style:family="table-cell"',
+                                      f'style:family="table-cell" style:data-style-name="{number_style}"', 1)
+                if ranking:
+                    if '<style:text-properties' not in block:
+                        block = block.replace('</style:style>', '<style:text-properties/></style:style>')
+                    block = re.sub(r'\s+fo:font-weight="[^"]*"', '', block)
+                    block = block.replace('<style:text-properties', '<style:text-properties fo:font-weight="bold"', 1)
             additions.append(block)
             cache[key] = name
         cell = re.sub(r'\s+table:number-columns-repeated="\d+"', '', cell)
@@ -101,7 +111,8 @@ def format_layout(content, ranking=False):
                 edges = [(side, f'{"0.088" if thick else "0.002"}cm solid {color}')
                          for side, thick in [('left', j == left), ('right', j == last),
                                              ('top', top), ('bottom', bottom)]] if j <= last else []
-                parts.append(styled(cell, background, edges))
+                parts.append(styled(cell, background, edges,
+                                    total=j == last and (is_total or ranking and i in groups and top)))
             if column > end + 1:
                 parts.append(re.sub(r'table:number-columns-repeated="\d+"',
                                     f'table:number-columns-repeated="{column - end - 1}"', cell))

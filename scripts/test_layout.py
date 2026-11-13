@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ergaenze_setzliste import cells, formula_cell, replace_at, update_cell
+from ergaenze_setzliste import cells, formula_cell, replace_at, set_style, update_cell
 from formatiere_listen import COLORS, ROW, format_layout
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,8 +28,11 @@ def inspect(content):
                      if k not in (f'{{{N["t"]}}}style-name', f'{{{N["t"]}}}number-columns-repeated')}
             values.extend([(attrs, ''.join(cell.itertext()))] * count)
             style = styles.get(cell.get(f'{{{N["t"]}}}style-name'))
-            props = style.find('s:table-cell-properties', N) if style is not None else None
-            formats.extend([props.attrib if props is not None else {}] * count)
+            props = dict(style.attrib) if style is not None else {}
+            if style is not None:
+                for child in style:
+                    props.update(child.attrib)
+            formats.extend([props] * count)
         rows.append(values)
         properties.append(formats)
     return rows, properties
@@ -49,11 +52,14 @@ def check(ranking):
             row = replace_at(row, column, update_cell(cells(row)[column], value))
         column = 12 if ranking else 7
         row = replace_at(row, column, formula_cell(cells(row)[column], 'of:=SUM([.A1:.A2])', '3,00'))
+        if ranking and index == 3:
+            row = replace_at(row, column, set_style(cells(row)[column], 'ce36'))
         rows.append(row)
     if not ranking:
         total = header
         total = replace_at(total, 0, update_cell(cells(total)[0], ''))
         total = replace_at(total, 6, update_cell(cells(total)[6], 'Summe'))
+        total = replace_at(total, 7, formula_cell(cells(total)[7], 'of:=SUM([.H2:.H6])', '15,00', suffix=' €'))
         rows.append(total)
     content = content[:matches[0].start()] + ''.join(rows) + content[matches[-1].end():]
     expected, _ = inspect(content)
@@ -76,9 +82,13 @@ def check(ranking):
         if ranking:
             assert attr(2, last, 'border-bottom') == '0.088cm solid #000000'
             assert attr(3, last, 'border-top') == '0.088cm solid #ff3333'
+            for row in (1, 3):
+                assert attr(row, last, 'font-weight') == 'bold'
+                assert styles[row][last][f'{{{N["s"]}}}data-style-name'] == 'N106'
         else:
             assert attr(6, 6, 'border-left') == '0.088cm solid #000000'
             assert attr(6, 7, 'background-color') == '#ffffff'
+            assert styles[6][7][f'{{{N["s"]}}}data-style-name'] == 'N2'
 
 
 if __name__ == '__main__':
